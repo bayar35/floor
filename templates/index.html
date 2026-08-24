@@ -10,7 +10,7 @@
         .main-container { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; margin-top: 10px; }
         .panel { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 450px; width: 100%; }
         
-        .workspace { position: relative; display: inline-block; width: 100%; max-width: 400px; }
+        .workspace { position: relative; display: inline-block; width: 100%; max-width: 400px; touch-action: none; }
         canvas, img#resultImg { width: 100% !important; height: auto !important; border: 1px solid #ccc; border-radius: 4px; display: block; }
         
         .furniture-palette { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; flex-wrap: wrap; }
@@ -24,7 +24,7 @@
             width: 100px;
             transform-origin: center;
             border: 1px dashed transparent;
-            touch-action: none; /* Гар утсан дээр дэлгэц гүйхээс сэргийлнэ */
+            touch-action: none;
         }
         .placed-furniture:hover { border-color: #007bff; }
 
@@ -157,7 +157,7 @@
             }
         }
 
-        // Тавилга нэмэх (Гар утас болон Компьютер дээр чирч зөөх)
+        // Тавилга нэмэх (Мобайл болон PC дээр чирч зөөх)
         function addFurniture(src) {
             const el = document.createElement('img');
             el.src = src;
@@ -169,20 +169,27 @@
             let isDragging = false;
             let startX, startY;
 
-            // Pointer events - Гар утасны хуруу болон хулганыг хоёуланг нь дэмжинэ
             el.addEventListener('pointerdown', (e) => {
-                if (isAddMode) return; // Цэг тавих горимд байвал хөдөлгөхгүй
+                if (isAddMode) return;
                 isDragging = true;
+                
+                const containerRect = workspaceContainer.getBoundingClientRect();
                 startX = e.clientX - el.offsetLeft;
                 startY = e.clientY - el.offsetTop;
+                
                 try { el.setPointerCapture(e.pointerId); } catch(err) {}
                 e.stopPropagation();
             });
 
             window.addEventListener('pointermove', (e) => {
                 if (!isDragging) return;
-                el.style.left = (e.clientX - startX) + 'px';
-                el.style.top = (e.clientY - startY) + 'px';
+                const containerRect = workspaceContainer.getBoundingClientRect();
+                
+                let newX = e.clientX - startX;
+                let newY = e.clientY - startY;
+                
+                el.style.left = newX + 'px';
+                el.style.top = newY + 'px';
             });
 
             window.addEventListener('pointerup', (e) => {
@@ -192,7 +199,6 @@
                 }
             });
 
-            // Компьютер дээр Scroll хийж хэмжээ өөрчлөх
             el.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 let currentWidth = el.offsetWidth;
@@ -203,7 +209,6 @@
                 }
             });
 
-            // Давхар товшиж устгах
             el.addEventListener('dblclick', () => {
                 if(confirm('Энэ тавилгыг устгах уу?')) el.remove();
             });
@@ -219,7 +224,6 @@
             document.querySelectorAll('.placed-furniture').forEach(el => el.remove());
         });
 
-        // Render хийх хүсэлт
         processBtn.addEventListener('click', () => {
             if (points.length < 4) {
                 alert('Яг 4 булангийн цэгийг сонгоно уу!');
@@ -228,14 +232,17 @@
 
             const furnitureElements = document.querySelectorAll('.placed-furniture');
             const furnitureData = [];
+            const canvasRect = canvas.getBoundingClientRect();
 
             furnitureElements.forEach(el => {
                 furnitureData.push({
                     src: el.dataset.src,
-                    x: (el.offsetLeft),
-                    y: (el.offsetTop),
+                    x: el.offsetLeft,
+                    y: el.offsetTop,
                     width: el.offsetWidth,
-                    height: el.offsetHeight
+                    height: el.offsetHeight,
+                    containerWidth: canvasRect.width,
+                    containerHeight: canvasRect.height
                 });
             });
 
@@ -248,8 +255,8 @@
                 body: JSON.stringify({
                     points: points,
                     furniture: furnitureData,
-                    canvasWidth: canvas.width,
-                    canvasHeight: canvas.height
+                    canvasWidth: canvasRect.width,
+                    canvasHeight: canvasRect.height
                 })
             })
             .then(res => res.json())
