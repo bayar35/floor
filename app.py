@@ -1,112 +1,83 @@
 import os
 import cv2
-import json
 import numpy as np
 from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
+
 UPLOAD_FOLDER = 'static/uploads'
+TEXTURE_FOLDER = 'static/textures'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(TEXTURE_FOLDER, exist_ok=True)
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
+@app.route('/upload', methods=['POST'])
+def upload_image():
+    if 'file' not in request.files:
+        return jsonify({'success': False})
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False})
+    
+    file_path = os.path.join(UPLOAD_FOLDER, 'room.jpg')
+    file.save(file_path)
+    return jsonify({'success': True})
+
 @app.route('/process', methods=['POST'])
 def process_image():
-    if 'roomImage' not in request.files:
-        return jsonify({'error': 'Зураг олдсонгүй'})
-    
-    file = request.files['roomImage']
-    if file.filename == '':
-        return jsonify({'error': 'Файл сонгогдоогүй байна'})
-    
-    points_data = request.form.get('points')
-    if not points_data:
-        return jsonify({'error': 'Шалны өнцгийн координат олдсонгүй'})
-    
     try:
-        pts_list = json.loads(points_data)
-        if len(pts_list) < 3:
-            return jsonify({'error': 'Дор хаяж 3 цэг шаардлагатай'})
-    except Exception as e:
-        return jsonify({'error': 'Координатыг задлахад алдаа гарлаа'})
+        data = request.json
+        points = data.get('points') # [{x, y}, ...]
 
-    room_path = os.path.join(app.config['UPLOAD_FOLDER'], 'room.jpg')
-    file.save(room_path)
-    
-    room_img = cv2.imread(room_path)
-    if room_img is None:
-        return jsonify({'error': 'Оруулсан зургийг уншихад алдаа гарлаа'})
+        if len(points) < 4:
+            return jsonify({'success': False, 'error': 'Бодит харагдуулахын тулд дор хаяж 4 цэг (шарны 4 буланг) сонгоно уу.'})
+
+        input_path = os.path.join(UPLOAD_FOLDER, 'room.jpg')
+        texture_path = os.path.join(TEXTURE_FOLDER, 'parquet.jpg')
+
+        if not os.path.exists(input_path) or not os.path.exists(texture_path):
+            return jsonify({'success': False, 'error': 'Зураг эсвэл текстур олдсонгүй.'})
+
+        img = cv2.imread(input_path)
+        texture = cv2.imread(texture_path)
+        th, tw = texture.shape[:2]
+
+        pts = np.array([[p['x'], p['y']] for p in points], dtype=np.float32)
+
+        # 4 цэгийг ашиглан хэтийн төлөвт шилжүүлэх (Perspective Transform)
+        # Хэрэглэгчийн сонгосон эхний 4 цэг: [доод зүүн, доод баруун, дээд баруун, дээд зүүн] дарааллаар байвал хамгийн сайн гарна
+        dst_pts = pts[:4]
         
-    h, w, _ = room_img.shape
-    
-    texture_path = 'static/textures/parquet.jpg'
-    texture_img = cv2.imread(texture_path)
-    if texture_img is None:
-        return jsonify({'error': 'static/textures/parquet.jpg текстур олдсонгүй!'})
-    
-    # АНХААРУУЛГА: cv2.rotate хийхгүйгээр анхны босоо (уртаашаа) чиглэлээр нь үлдээнэ!
-    
-    # Бүх цэгүүдийг зургийн бодит хэмжээнд шилжүүлэх
-    pts_dst = np.array([[p['x'] * w, p['y'] * h] for p in pts_list], dtype=np.float32)
-    
-    x, y, w_box, h_box = cv2.boundingRect(pts_dst)
-    
-    if w_box < 10 or h_box < 10:
-        return jsonify({'error': 'Сонгосон хүрээ хэт жижиг байна'})
+        # Текстурийн дөрвөн өнцөг
+        src_pts = np.float32([[0, 0], [tw, 0], [tw, th], [0, th]])
 
-    # Текстурийг хангалттай том хэмжээтэйгээр давтаж бэлтгэх
-    h_tex, w_tex, _ = texture_img.shape
-    big_texture = np.zeros((h_box * 3, w_box * 3, 3), dtype=np.uint8)
-    
-    for ty in range(0, h_box * 3, h_tex):
-        for tx in range(0, w_box * 3, w_tex):
-            ty_end = min(ty + h_tex, h_box * 3)
-            tx_end = min(tx + w_tex, w_box * 3)
-            big_texture[ty:ty_end, tx:tx_end] = texture_img[:ty_end - ty, :tx_end - tx]
-            
-    h_big, w_big, _ = big_texture.shape
-    pts_src = np.float32([
-        [0, 0],
-        [w_big, 0],
-        [w_big, h_big],
-        [0, h_big]
-    ])
-    
-    # Коридорын гүн рүү хувиргах 4 булан
-    sums = pts_dst.sum(axis=1)
-    diffs = np.diff(pts_dst, axis=1)
-    
-    tl = pts_dst[np.argmin(sums)]
-    br = pts_dst[np.argmax(sums)]
-    tr = pts_dst[np.argmin(diffs)]
-    bl = pts_dst[np.argmax(diffs)]
-    
-    pts_warp_dst = np.float32([tl, tr, br, bl])
-    
-    matrix, _ = cv2.findHomography(pts_src[:4], pts_warp_dst)
-    warped_texture = cv2.warpPerspective(big_texture, matrix, (w, h))
-    
-    # Нарийн маск үүсгэх
-    mask = np.zeros((h, w), dtype=np.uint8)
-    pts_int = np.int32(pts_dst)
-    cv2.fillPoly(mask, [pts_int], 255)
-    
-    mask = cv2.GaussianBlur(mask, (3, 3), 0)
-    mask_3ch = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR) / 255.0
-    
-    room_float = room_img.astype(float)
-    warped_float = warped_texture.astype(float)
-    
-    final_float = room_float * (1 - mask_3ch) + warped_float * mask_3ch
-    final_result = np.clip(final_float, 0, 255).astype(np.uint8)
-    
-    output_path = os.path.join(app.config['UPLOAD_FOLDER'], 'result.jpg')
-    cv2.imwrite(output_path, final_result)
-    
-    return jsonify({'success': True, 'result_url': '/static/uploads/result.jpg?'})
+        # Матриц олох болон паркетын зургийг гажуудуулах (warp)
+        matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+        warped_texture = cv2.warpPerspective(texture, matrix, (img.shape[1], img.shape[0]))
+
+        # Mask үүсгэх (олон өнцөгтийн дотор талыг сонгох)
+        mask = np.zeros(img.shape[:2], dtype=np.uint8)
+        cv2.fillPoly(mask, [pts.astype(np.int32)], 255)
+        
+        # Захоор нь зөөллөх (Blending хийхэд ирмэг нь цэвэрхэн харагдах зорилгоор)
+        mask_3ch = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR) / 255.0
+
+        # Үндсэн зураг болон паркетыг холих
+        bg = img.astype(float) * (1 - mask_3ch)
+        fg = warped_texture.astype(float) * mask_3ch
+        combined = cv2.add(bg, fg).astype(np.uint8)
+
+        # Үр дүнг хадгалах
+        output_path = os.path.join(UPLOAD_FOLDER, 'result.jpg')
+        cv2.imwrite(output_path, combined)
+
+        return jsonify({'success': True, 'resultUrl': '/static/uploads/result.jpg?' + str(np.random.randint(1000))})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)
