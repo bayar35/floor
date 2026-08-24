@@ -3,13 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Олон өнцөгт паркет суулгах систем (Бодит хэтийн төлөв)</title>
+    <title>Интерьер Дизайн Render Систем</title>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 10px; background: #f4f4f9; }
         .instructions { font-size: 13px; color: #555; margin-bottom: 10px; }
         .main-container { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; margin-top: 10px; }
-        .panel { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 400px; width: 100%; }
-        canvas, img#resultImg { width: 100% !important; height: auto !important; border: 1px solid #ccc; border-radius: 4px; cursor: crosshair; }
+        .panel { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 450px; width: 100%; }
+        
+        .workspace { position: relative; display: inline-block; width: 100%; max-width: 400px; }
+        canvas, img#resultImg { width: 100% !important; height: auto !important; border: 1px solid #ccc; border-radius: 4px; display: block; }
+        
+        .furniture-palette { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; flex-wrap: wrap; }
+        .furniture-item { cursor: pointer; border: 2px solid #ddd; border-radius: 5px; padding: 5px; background: #fff; width: 50px; height: 50px; object-fit: contain; }
+        .furniture-item:hover { border-color: #007bff; }
+
+        .placed-furniture {
+            position: absolute;
+            cursor: move;
+            user-select: none;
+            width: 100px;
+            transform-origin: center;
+            border: 1px dashed transparent;
+        }
+        .placed-furniture:hover { border-color: #007bff; }
+
         button { padding: 8px 12px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; margin: 5px; font-size: 13px; }
         button.active { background: #007bff; }
         button.secondary { background: #dc3545; }
@@ -18,27 +35,37 @@
 </head>
 <body>
 
-    <h2>Шал солих систем (OpenCV Perspective)</h2>
+    <h2>🛋️ Интерьер Дизайн & Floor Render Систем</h2>
     <div class="instructions">
-        💡 <b>Заавар:</b> Зургийг сонгоод <b>"Горим: Асаалттай"</b> товчийг дарж шалны <b>4 булан</b>-г дарааллаар нь (Жишээ нь: Ойрын зүүн -> Ойрын баруун -> Цаад баруун -> Цаад зүүн) тэмдэглээд <b>"Шал солих"</b> товчийг дарна уу.
+        💡 <b>Заавар:</b> Зургийг оруулаад шалны 4 буланг тэмдэглэнэ. Тавилга нэмж чирч байрлуулаад, хулганы гол (scroll)-оор хэмжээг нь томсгож жижгэрүүлж болно. Эцэст нь <b>"Render хийх"</b> дарна уу.
     </div>
     <input type="file" id="imageInput" accept="image/*"><br>
 
     <div class="main-container">
         <div class="panel">
-            <h3>1. Хүрээ зурах (4 булан)</h3>
-            <canvas id="roomCanvas"></canvas>
+            <h3>1. Өрөөний тохижилт</h3>
+            <div class="furniture-palette">
+                <img src="/static/furniture/wardrobe.png" class="furniture-item" onclick="addFurniture('/static/furniture/wardrobe.png')" title="Шкаф">
+                <img src="/static/furniture/fridge.png" class="furniture-item" onclick="addFurniture('/static/furniture/fridge.png')" title="Хөргөгч">
+                <img src="/static/furniture/table.png" class="furniture-item" onclick="addFurniture('/static/furniture/table.png')" title="Ширээ">
+                <img src="/static/furniture/sink.png" class="furniture-item" onclick="addFurniture('/static/furniture/sink.png')" title="Угаалтуур">
+            </div>
+
+            <div class="workspace" id="workspaceContainer">
+                <canvas id="roomCanvas"></canvas>
+            </div>
+
             <div>
-                <button id="modeBtn" class="active">➕ Горим: Асаалттай</button>
-                <button id="processBtn">Шал солих</button>
+                <button id="modeBtn" class="active">➕ Цэг тавих</button>
+                <button id="processBtn">✨ Render хийх</button>
                 <button id="resetBtn" class="secondary">Цэвэрлэх</button>
             </div>
         </div>
 
         <div class="panel">
-            <h3>2. Үр дүн</h3>
-            <div class="placeholder-text" id="placeholder">Үр дүн энд харагдана</div>
-            <img id="resultImg" alt="Үр дүн" style="display:none;">
+            <h3>2. Эцсийн Render үр дүн</h3>
+            <div class="placeholder-text" id="placeholder">Render хийсний дараа энд гарна</div>
+            <img id="resultImg" alt="Render үр дүн" style="display:none;">
         </div>
     </div>
 
@@ -51,6 +78,7 @@
         const resetBtn = document.getElementById('resetBtn');
         const resultImg = document.getElementById('resultImg');
         const placeholder = document.getElementById('placeholder');
+        const workspaceContainer = document.getElementById('workspaceContainer');
 
         let img = new Image();
         let points = [];
@@ -82,7 +110,7 @@
 
         modeBtn.addEventListener('click', () => {
             isAddMode = !isAddMode;
-            modeBtn.innerText = isAddMode ? "➕ Горим: Асаалттай" : "➕ Горим: Унтраалттай";
+            modeBtn.innerText = isAddMode ? "➕ Цэг тавих" : "🛋️ Тавилга зөөх";
             modeBtn.classList.toggle('active', isAddMode);
         });
 
@@ -128,30 +156,99 @@
             }
         }
 
+        // Тавилга нэмэх (Чирч зөөх болон Scroll хийж хэмжээг өөрчлөх)
+        function addFurniture(src) {
+            const el = document.createElement('img');
+            el.src = src;
+            el.className = 'placed-furniture';
+            el.style.left = '20px';
+            el.style.top = '20px';
+            el.dataset.src = src;
+
+            let isDragging = false;
+            let startX, startY;
+
+            el.addEventListener('mousedown', (e) => {
+                if (isAddMode) return;
+                isDragging = true;
+                startX = e.clientX - el.offsetLeft;
+                startY = e.clientY - el.offsetTop;
+                e.stopPropagation();
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                el.style.left = (e.clientX - startX) + 'px';
+                el.style.top = (e.clientY - startY) + 'px';
+            });
+
+            window.addEventListener('mouseup', () => { isDragging = false; });
+
+            // Scroll хийхэд хэмжээ томсч / жижгэрэх
+            el.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                let currentWidth = el.offsetWidth;
+                if (e.deltaY < 0) {
+                    el.style.width = (currentWidth + 10) + 'px';
+                } else {
+                    el.style.width = Math.max(30, currentWidth - 10) + 'px';
+                }
+            });
+
+            el.addEventListener('dblclick', () => {
+                if(confirm('Энэ тавилгыг устгах уу?')) el.remove();
+            });
+
+            workspaceContainer.appendChild(el);
+        }
+
         resetBtn.addEventListener('click', () => {
             points = [];
             drawImage();
             resultImg.style.display = 'none';
             placeholder.style.display = 'flex';
+            document.querySelectorAll('.placed-furniture').forEach(el => el.remove());
         });
 
+        // Render хийх хүсэлт илгээх
         processBtn.addEventListener('click', () => {
             if (points.length < 4) {
                 alert('Яг 4 булангийн цэгийг сонгоно уу!');
                 return;
             }
 
-            processBtn.innerText = "Боловсруулж байна...";
+            // Байрлуулсан бүх тавилгын мэдээллийг цуглуулах
+            const furnitureElements = document.querySelectorAll('.placed-furniture');
+            const furnitureData = [];
+            const containerRect = canvas.getBoundingClientRect();
+
+            furnitureElements.forEach(el => {
+                const elRect = el.getBoundingClientRect();
+                furnitureData.push({
+                    src: el.dataset.src,
+                    x: (el.offsetLeft),
+                    y: (el.offsetTop),
+                    width: el.offsetWidth,
+                    height: el.offsetHeight
+                });
+            });
+
+            processBtn.innerText = "Rendering хийж байна...";
             processBtn.disabled = true;
             
             fetch('/process', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ points: points })
+                body: JSON.stringify({
+                    points: points,
+                    furniture: furnitureData,
+                    canvasWidth: canvas.width,
+                    canvasHeight: canvas.height
+                })
             })
             .then(res => res.json())
             .then(data => {
-                processBtn.innerText = "Шал солих";
+                processBtn.innerText = "✨ Render хийх";
                 processBtn.disabled = false;
                 if (data.success) {
                     resultImg.src = data.resultUrl;
@@ -162,7 +259,7 @@
                 }
             })
             .catch(err => {
-                processBtn.innerText = "Шал солих";
+                processBtn.innerText = "✨ Render хийх";
                 processBtn.disabled = false;
                 alert('Сервертэй холбогдоход алдаа гарлаа.');
             });
