@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 from flask import Flask, request, jsonify, render_template, send_from_directory
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
@@ -23,9 +24,13 @@ def upload_image():
     if file.filename == '':
         return jsonify({'success': False, 'error': 'Файл сонгогдоогүй байна'})
     
-    filepath = os.path.join(UPLOAD_FOLDER, 'input.jpg')
+    filename = secure_filename(file.filename)
+    # Давхардхаас сэргийлж нэр өвөрмөц болгох
+    filename = f"input_{np.random.randint(1000, 9999)}_{filename}"
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
-    return jsonify({'success': True})
+    
+    return jsonify({'success': True, 'filename': filename})
 
 @app.route('/results/<filename>')
 def get_result(filename):
@@ -41,49 +46,50 @@ def process_image():
         data = request.json
         points = data.get('points', [])
         furniture_list = data.get('furniture', [])
+        image_filename = data.get('filename')
         
-        img_path = os.path.join(UPLOAD_FOLDER, 'input.jpg')
+        if not image_filename:
+            return jsonify({'success': False, 'error': 'Зургийн мэдээлэл олдсонгүй. Зургийг дахин оруулна уу.'})
+
+        img_path = os.path.join(UPLOAD_FOLDER, image_filename)
+        if not os.path.exists(img_path):
+            return jsonify({'success': False, 'error': 'Оролт болсон зураг сервер дээр олдсонгүй (Устсан байж магадгүй). Зургийг дахин оруулна уу.'})
+
         img = cv2.imread(img_path)
         if img is None:
-            return jsonify({'success': False, 'error': 'Оролт болсон зураг олдсонгүй'})
+            return jsonify({'success': False, 'error': 'Зургийг уншихад алдаа гарлаа.'})
 
         if len(points) < 4:
             return jsonify({'success': False, 'error': 'Дөрвөн булангийн цэгийг бүрэн сонгоно уу'})
 
-        # 1. Шалны хэсгийг олох болон паркет/модон texture суурилуулах
+        # 1. Шалны хэсгийг олох болон модон texture суурилуулах
         pts = np.array([[p['x'], p['y']] for p in points], dtype=np.float32)
         
-        # Жишээ паркет texture (Хэрэв static/furniture/wood_texture.jpg байхгүй бол өнгөөр дүүргэнэ)
         texture_path = 'static/furniture/wood_texture.jpg'
         if os.path.exists(texture_path):
             texture = cv2.imread(texture_path)
         else:
-            # Паркет байхгүй бол бор өнгийн модон текстур үүсгэх эсвэл зурах
             texture = np.ones((300, 300, 3), dtype=np.uint8) * 120
-            texture[:, :, 0] = 50   # B
-            texture[:, :, 1] = 90   # G
-            texture[:, :, 2] = 140  # R
+            texture[:, :, 0] = 50   
+            texture[:, :, 1] = 90   
+            texture[:, :, 2] = 140  
 
-        # Перспективийн хувиргалт хийх (Perspective Warp)
         h, w = img.shape[:2]
         t_h, t_w = texture.shape[:2]
         src_pts = np.array([[0, 0], [t_w, 0], [t_w, t_h], [0, t_h]], dtype=np.float32)
         
-        # Perspective Matrix олох
         M = cv2.getPerspectiveTransform(src_pts, pts)
         warped_texture = cv2.warpPerspective(texture, M, (w, h))
 
-        # Маск үүсгэх
         mask = np.zeros((h, w), dtype=np.uint8)
         cv2.fillConvexPoly(mask, pts.astype(np.int32), 255)
         
-        # Зураг дээр шалыг уусгах
         mask_inv = cv2.bitwise_not(mask)
         img_bg = cv2.bitwise_and(img, img, mask=mask_inv)
         texture_fg = cv2.bitwise_and(warped_texture, warped_texture, mask=mask)
         combined = cv2.add(img_bg, texture_fg)
 
-        # 2. Тавилгуудыг байрлал болон хэмжээний дагуу үнэн зөвөөр зурах
+        # 2. Тавилгуудыг зөв байрлал, хэмжээгээр зурах
         disp_width = data.get('canvasWidth', w)
         disp_height = data.get('canvasHeight', h)
         
@@ -102,7 +108,6 @@ def process_image():
             f_w = int(item['width'] * scale_x)
             f_h = int(item['height'] * scale_y)
             
-            # Хэмжээ хэт бага эсвэл 0 байхаас сэргийлэх
             if f_w <= 0 or f_h <= 0:
                 continue
                 
@@ -111,7 +116,6 @@ def process_image():
             fx = int(item['x'] * scale_x)
             fy = int(item['y'] * scale_y)
 
-            # PNG transparent (Alpha) сувгаар зурган дээр давхарлаж байрлуулах
             for y_idx in range(f_h):
                 jy = fy + y_idx
                 if jy >= h or jy < 0: 
@@ -130,10 +134,11 @@ def process_image():
                         for c in range(3):
                             combined[jy, jx, c] = furn_resized[y_idx, x_idx, c]
 
-        result_path = os.path.join(RESULT_FOLDER, 'output.jpg')
+        result_filename = f"output_{np.random.randint(1000, 9999)}.jpg"
+        result_path = os.path.join(RESULT_FOLDER, result_filename)
         cv2.imwrite(result_path, combined)
         
-        return jsonify({'success': True, 'resultUrl': '/results/output.jpg?t=' + str(np.random.randint(10000))})
+        return jsonify({'success': True, 'resultUrl': f'/results/{result_filename}?t=' + str(np.random.randint(10000))})
 
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
