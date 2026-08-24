@@ -24,6 +24,7 @@
             width: 100px;
             transform-origin: center;
             border: 1px dashed transparent;
+            touch-action: none; /* Гар утсан дээр дэлгэц гүйхээс сэргийлнэ */
         }
         .placed-furniture:hover { border-color: #007bff; }
 
@@ -37,7 +38,7 @@
 
     <h2>🛋️ Интерьер Дизайн & Floor Render Систем</h2>
     <div class="instructions">
-        💡 <b>Заавар:</b> Зургийг оруулаад шалны 4 буланг тэмдэглэнэ. Тавилга нэмж чирч байрлуулаад, хулганы гол (scroll)-оор хэмжээг нь томсгож жижгэрүүлж болно. Эцэст нь <b>"Render хийх"</b> дарна уу.
+        💡 <b>Заавар:</b> Зургийг оруулаад шалны 4 буланг тэмдэглэнэ. Тавилга нэмж хуруугаар болон хулганаар чирч байрлуулна уу.
     </div>
     <input type="file" id="imageInput" accept="image/*"><br>
 
@@ -156,7 +157,7 @@
             }
         }
 
-        // Тавилга нэмэх (Чирч зөөх болон Scroll хийж хэмжээг өөрчлөх)
+        // Тавилга нэмэх (Гар утас болон Компьютер дээр чирч зөөх)
         function addFurniture(src) {
             const el = document.createElement('img');
             el.src = src;
@@ -168,23 +169,30 @@
             let isDragging = false;
             let startX, startY;
 
-            el.addEventListener('mousedown', (e) => {
-                if (isAddMode) return;
+            // Pointer events - Гар утасны хуруу болон хулганыг хоёуланг нь дэмжинэ
+            el.addEventListener('pointerdown', (e) => {
+                if (isAddMode) return; // Цэг тавих горимд байвал хөдөлгөхгүй
                 isDragging = true;
                 startX = e.clientX - el.offsetLeft;
                 startY = e.clientY - el.offsetTop;
+                try { el.setPointerCapture(e.pointerId); } catch(err) {}
                 e.stopPropagation();
             });
 
-            window.addEventListener('mousemove', (e) => {
+            window.addEventListener('pointermove', (e) => {
                 if (!isDragging) return;
                 el.style.left = (e.clientX - startX) + 'px';
                 el.style.top = (e.clientY - startY) + 'px';
             });
 
-            window.addEventListener('mouseup', () => { isDragging = false; });
+            window.addEventListener('pointerup', (e) => {
+                if (isDragging) {
+                    isDragging = false;
+                    try { el.releasePointerCapture(e.pointerId); } catch(err) {}
+                }
+            });
 
-            // Scroll хийхэд хэмжээ томсч / жижгэрэх
+            // Компьютер дээр Scroll хийж хэмжээ өөрчлөх
             el.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 let currentWidth = el.offsetWidth;
@@ -195,6 +203,7 @@
                 }
             });
 
+            // Давхар товшиж устгах
             el.addEventListener('dblclick', () => {
                 if(confirm('Энэ тавилгыг устгах уу?')) el.remove();
             });
@@ -210,20 +219,17 @@
             document.querySelectorAll('.placed-furniture').forEach(el => el.remove());
         });
 
-        // Render хийх хүсэлт илгээх
+        // Render хийх хүсэлт
         processBtn.addEventListener('click', () => {
             if (points.length < 4) {
                 alert('Яг 4 булангийн цэгийг сонгоно уу!');
                 return;
             }
 
-            // Байрлуулсан бүх тавилгын мэдээллийг цуглуулах
             const furnitureElements = document.querySelectorAll('.placed-furniture');
             const furnitureData = [];
-            const containerRect = canvas.getBoundingClientRect();
 
             furnitureElements.forEach(el => {
-                const elRect = el.getBoundingClientRect();
                 furnitureData.push({
                     src: el.dataset.src,
                     x: (el.offsetLeft),
