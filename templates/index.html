@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Олон өнцөгт паркет суулгах систем</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin: 10px; background: #f4f4f9; overflow-x: hidden; }
+        h2 { color: #333; font-size: 20px; margin-bottom: 5px; }
+        .instructions { font-size: 12px; color: #555; margin-bottom: 10px; max-width: 100%; padding: 0 5px; line-height: 1.4; }
+        .main-container {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 5px;
+        }
+        .panel {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+            box-sizing: border-box;
+        }
+        canvas {
+            display: block;
+            width: 100% !important;
+            height: auto !important;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: crosshair;
+        }
+        img#resultImg {
+            display: block;
+            width: 100% !important;
+            height: auto !important;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .controls { margin-top: 10px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+        button { 
+            padding: 8px 12px; 
+            font-size: 13px; 
+            background: #28a745; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+        }
+        button:hover { background: #218838; }
+        button.secondary { background: #dc3545; }
+        button.secondary:hover { background: #c82333; }
+        button.mode-btn { background: #6c757d; }
+        button.mode-btn.active { background: #007bff; font-weight: bold; }
+        button:disabled { background: #94d3a2; cursor: not-allowed; }
+        .placeholder-text {
+            width: 100%;
+            height: 250px;
+            border: 2px dashed #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #888;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Шал сольж үзэх систем</h2>
+    <div class="instructions">
+        💡 <b>Заавар:</b> Зургийг сонгоод <b>"Горим: Асаалттай"</b> товчийг дарж шалны хүрээгээр цэгүүдээ тавиад <b>"Шал солих"</b> товчийг дарна уу.
+    </div>
+    <input type="file" id="imageInput" accept="image/*" style="margin-bottom: 10px;"><br>
+
+    <div class="main-container">
+        <!-- Зүүн тал: Тохируулах хэсэг -->
+        <div class="panel">
+            <h3>1. Хүрээ тааруулах</h3>
+            <div>
+                <canvas id="roomCanvas"></canvas>
+            </div>
+            <div class="controls">
+                <button id="modeBtn" class="mode-btn" style="display:none;">➕ Горим: Унтраалттай</button>
+                <button id="processBtn" style="display:none;">Шал солих</button>
+                <button id="resetBtn" class="secondary" style="display:none;">Цэвэрлэх</button>
+            </div>
+        </div>
+
+        <!-- Баруун тал: Үр дүнгийн хэсэг -->
+        <div class="panel">
+            <h3>2. Үр дүн</h3>
+            <div>
+                <div class="placeholder-text" id="placeholder">Үр дүн энд харагдана</div>
+                <img id="resultImg" alt="Үр дүнгийн зураг" style="display:none;">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const canvas = document.getElementById('roomCanvas');
+        const ctx = canvas.getContext('2d');
+        const modeBtn = document.getElementById('modeBtn');
+        const processBtn = document.getElementById('processBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const resultImg = document.getElementById('resultImg');
+        const placeholder = document.getElementById('placeholder');
+
+        let img = new Image();
+        let points = [];
+        let draggingIndex = null;
+        let isAddMode = false;
+        const radius = 7;
+
+        imageInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                img.src = event.target.result;
+            }
+            reader.readAsDataURL(file);
+        });
+
+        img.onload = function() {
+            // Зургийн бодит өндөр өргөнийг canvas-д тохируулах (Дэлгэц дээр CSS-ээр жижиг харагдана)
+            canvas.width = img.width;
+            canvas.height = img.height;
+
+            points = [];
+            isAddMode = false;
+            updateModeButtonUI();
+
+            drawImageAndPoints();
+            
+            modeBtn.style.display = 'inline-block';
+            processBtn.style.display = 'inline-block';
+            resetBtn.style.display = 'inline-block';
+            
+            resultImg.style.display = 'none';
+            placeholder.style.display = 'flex';
+        };
+
+        function updateModeButtonUI() {
+            if (isAddMode) {
+                modeBtn.innerText = "➕ Горим: Асаалттай";
+                modeBtn.classList.add('active');
+            } else {
+                modeBtn.innerText = "➕ Горим: Унтраалттай";
+                modeBtn.classList.remove('active');
+            }
+        }
+
+        modeBtn.addEventListener('click', () => {
+            isAddMode = !isAddMode;
+            updateModeButtonUI();
+        });
+
+        function drawImageAndPoints() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            if (points.length > 0) {
+                if (points.length >= 2) {
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+                    for (let i = 1; i < points.length; i++) {
+                        ctx.lineTo(points[i].x, points[i].y);
+                    }
+                    if (points.length >= 3) {
+                        ctx.closePath();
+                        ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+                        ctx.fill();
+                    }
+                    ctx.strokeStyle = '#ff0000';
+                    ctx.lineWidth = Math.max(3, canvas.width / 200);
+                    ctx.stroke();
+                }
+
+                points.forEach((p, index) => {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, radius * (canvas.width / 400), 0, 2 * Math.PI);
+                    ctx.fillStyle = '#007bff';
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = `${Math.max(12, canvas.width / 40)}px Arial`;
+                    ctx.fillText(index + 1, p.x - 4, p.y + 4);
+                });
+            }
+        }
+
+        // Хулгана болон Touch координатын зөрүүг нарийвчлан тооцоолох
+        function getEventPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            
+            // Canvas-ын CSS хэмжээ болон бодит pixel хэмжээний харьцааг олох
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        canvas.addEventListener('mousedown', (e) => handleStart(getEventPos(e)));
+        canvas.addEventListener('touchstart', (e) => { handleStart(getEventPos(e)); e.preventDefault(); }, {passive: false});
+
+        function handleStart(pos) {
+            let clickedIndex = -1;
+            const hitRadius = (radius * (canvas.width / 400)) + 10;
+            points.forEach((p, index) => {
+                const dist = Math.hypot(p.x - pos.x, p.y - pos.y);
+                if (dist < hitRadius) {
+                    clickedIndex = index;
+                }
+            });
+
+            if (clickedIndex !== -1) {
+                draggingIndex = clickedIndex;
+            } else if (isAddMode) {
+                points.push({ x: pos.x, y: pos.y });
+                drawImageAndPoints();
+            }
+        }
+
+        canvas.addEventListener('mousemove', (e) => handleMove(getEventPos(e)));
+        canvas.addEventListener('touchmove', (e) => { handleMove(getEventPos(e)); e.preventDefault(); }, {passive: false});
+
+        function handleMove(pos) {
+            if (draggingIndex === null) return;
+            points[draggingIndex].x = pos.x;
+            points[draggingIndex].y = pos.y;
+            drawImageAndPoints();
+        }
+
+        window.addEventListener('mouseup', () => { draggingIndex = null; });
+        window.addEventListener('touchend', () => { draggingIndex = null; });
+
+        canvas.addEventListener('dblclick', (e) => {
+            const pos = getEventPos(e);
+            const hitRadius = (radius * (canvas.width / 400)) + 10;
+            points.forEach((p, index) => {
+                const dist = Math.hypot(p.x - pos.x, p.y - pos.y);
+                if (dist < hitRadius) {
+                    points.splice(index, 1);
+                    drawImageAndPoints();
+                }
+            });
+        });
+
+        resetBtn.addEventListener('click', () => {
+            points = [];
+            isAddMode = false;
+            updateModeButtonUI();
+            drawImageAndPoints();
+            resultImg.style.display = 'none';
+            placeholder.style.display = 'flex';
+        });
+
+        // Шал солих логик (Паркетын хэмжээг маш жижиг болгож масштаблах)
+        processBtn.addEventListener('click', () => {
+            if (points.length < 3) {
+                alert('Дор хаяж 3 цэг сонгоно уу!');
+                return;
+            }
+
+            processBtn.innerText = "Боловсруулж байна...";
+            processBtn.disabled = true;
+
+            const tempCanvas = document.createElement('canvas');
+            const tCtx = tempCanvas.getContext('2d');
+
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+
+            tCtx.drawImage(canvas, 0, 0);
+
+            tCtx.save();
+            tCtx.beginPath();
+            tCtx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                tCtx.lineTo(points[i].x, points[i].y);
+            }
+            tCtx.closePath();
+            tCtx.clip();
+
+            const textureImg = new Image();
+            textureImg.src = 'static/textures/parquet.jpg';
+
+            textureImg.onload = function() {
+                // Паркетыг шаланд яг таартал маш жижиг хэмжээтэй болгох (масштаблах)
+                const scaleFactor = 40 / textureImg.width; 
+                const patternCanvas = document.createElement('canvas');
+                const pCtx = patternCanvas.getContext('2d');
+                
+                patternCanvas.width = textureImg.width * scaleFactor;
+                patternCanvas.height = textureImg.height * scaleFactor;
+                
+                pCtx.drawImage(textureImg, 0, 0, patternCanvas.width, patternCanvas.height);
+
+                const pattern = tCtx.createPattern(patternCanvas, 'repeat');
+                tCtx.fillStyle = pattern;
+                tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                
+                tCtx.restore();
+
+                resultImg.src = tempCanvas.toDataURL('image/jpeg');
+                resultImg.style.display = 'block';
+                placeholder.style.display = 'none';
+
+                processBtn.innerText = "Шал солих";
+                processBtn.disabled = false;
+            };
+
+            textureImg.onerror = function() {
+                alert('Текстур олдсонгүй (static/textures/parquet.jpg)!');
+                processBtn.innerText = "Шал солих";
+                processBtn.disabled = false;
+            };
+        });
+    </script>
+</body>
+</html>
