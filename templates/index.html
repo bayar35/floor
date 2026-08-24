@@ -84,6 +84,7 @@
         let img = new Image();
         let points = [];
         let isAddMode = true;
+        let uploadedFilename = null;
 
         imageInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
@@ -95,9 +96,12 @@
                 .then(res => res.json())
                 .then(data => {
                     if(data.success) {
+                        uploadedFilename = data.filename;
                         const reader = new FileReader();
                         reader.onload = (event) => { img.src = event.target.result; }
                         reader.readAsDataURL(file);
+                    } else {
+                        alert('Зураг хуулахад алдаа гарлаа: ' + data.error);
                     }
                 });
         });
@@ -157,7 +161,6 @@
             }
         }
 
-        // Тавилга нэмэх (Мобайл болон PC дээр чирч зөөх)
         function addFurniture(src) {
             const el = document.createElement('img');
             el.src = src;
@@ -173,7 +176,6 @@
                 if (isAddMode) return;
                 isDragging = true;
                 
-                const containerRect = workspaceContainer.getBoundingClientRect();
                 startX = e.clientX - el.offsetLeft;
                 startY = e.clientY - el.offsetTop;
                 
@@ -183,7 +185,6 @@
 
             window.addEventListener('pointermove', (e) => {
                 if (!isDragging) return;
-                const containerRect = workspaceContainer.getBoundingClientRect();
                 
                 let newX = e.clientX - startX;
                 let newY = e.clientY - startY;
@@ -225,6 +226,11 @@
         });
 
         processBtn.addEventListener('click', () => {
+            if (!uploadedFilename) {
+                alert('Эхлээд зургаа сонгож оруулна уу!');
+                return;
+            }
+
             if (points.length < 4) {
                 alert('Яг 4 булангийн цэгийг сонгоно уу!');
                 return;
@@ -240,9 +246,7 @@
                     x: el.offsetLeft,
                     y: el.offsetTop,
                     width: el.offsetWidth,
-                    height: el.offsetHeight,
-                    containerWidth: canvasRect.width,
-                    containerHeight: canvasRect.height
+                    height: el.offsetHeight
                 });
             });
 
@@ -253,6 +257,7 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    filename: uploadedFilename,
                     points: points,
                     furniture: furnitureData,
                     canvasWidth: canvasRect.width,
