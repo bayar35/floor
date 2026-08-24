@@ -1,4 +1,5 @@
-echo Flask==3.0.0 > requirements.txt
-echo opencv-python-headless==4.8.1.78 >> requirements.txt
-echo numpy==1.26.4 >> requirements.txt
-echo gunicorn >> requirements.txt
+Flask==3.0.0
+gunicorn==21.2.0
+opencv-python==4.8.1.78
+numpy==1.26.2
+werkzeug==3.0.1
